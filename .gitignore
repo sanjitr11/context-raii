@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.db
+*.log
+eviction_hints.json
+nudge_sent.*
+pending_tag.json
+schema_samples.jsonl
