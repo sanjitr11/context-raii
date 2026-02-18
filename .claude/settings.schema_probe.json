@@ -1,0 +1,47 @@
+{
+  "_comment": "Use this FIRST to learn the actual event schemas. Copy to .claude/settings.json in a test project.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/context-raii/hooks/schema_logger.py pre_tool_use"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/context-raii/hooks/schema_logger.py post_tool_use"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/context-raii/hooks/schema_logger.py pre_compact"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/context-raii/hooks/schema_logger.py session_start"
+          }
+        ]
+      }
+    ]
+  }
+}
