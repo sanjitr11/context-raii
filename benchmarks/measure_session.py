@@ -127,6 +127,38 @@ def main():
         print(f"  Evictable tokens extend context by ~{runway_pct}% of compaction threshold")
         print(f"  ({fmt_tokens(saved)} of ~{fmt_tokens(COMPACT_THRESHOLD)} threshold tokens recoverable)")
 
+    # Compaction compliance history
+    try:
+        events = conn.execute(
+            """
+            SELECT id, compacted_at, hints_evictable_count, hints_preserved_count,
+                   hints_evictable_tokens, confirmed_evicted, false_negatives,
+                   compliance_rate, compliance_block_found
+            FROM compaction_events
+            ORDER BY compacted_at DESC
+            LIMIT 5
+            """
+        ).fetchall()
+        if events:
+            print(f"\nCOMPACTION COMPLIANCE  (last {len(events)} event(s))")
+            print(f"  {'Date/Time':<20} {'Evict hints':>11} {'Confirmed':>10} "
+                  f"{'FalseNeg':>9} {'Rate':>7}")
+            print(f"  {'-'*20} {'-'*11} {'-'*10} {'-'*9} {'-'*7}")
+            for e in events:
+                ts = (e["compacted_at"] or "")[:19].replace("T", " ")
+                rate_str = f"{e['compliance_rate']:.0%}" if e["confirmed_evicted"] else "n/a"
+                print(
+                    f"  {ts:<20} {e['hints_evictable_count']:>11} "
+                    f"{e['confirmed_evicted']:>10} {e['false_negatives']:>9} "
+                    f"{rate_str:>7}"
+                )
+            print()
+            print("  compliance_rate = confirmed_evicted / hints_evictable_count")
+            print("  (re-fetch of an evictable path = hint respected = chunk not in summary)")
+            print("  false_negatives = re-fetches of paths marked critical-to-preserve")
+    except Exception:
+        pass  # table may not exist on older DBs
+
     conn.close()
     print(f"\n{'='*60}\n")
 

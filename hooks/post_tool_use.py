@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from raii.task_registry import TaskRegistry
 from raii.context_tagger import ContextTagger
 from raii.eviction_engine import EvictionEngine
+from raii.compaction_advisor import CompactionAdvisor
 from raii.storage import DB_DIR, ensure_db
 
 DB_DIR.mkdir(parents=True, exist_ok=True)
@@ -99,6 +100,17 @@ def main():
             chunk.size_tokens,
             chunk.is_refetchable,
         )
+
+    # ------------------------------------------------------------------
+    # Compliance tracking: detect re-fetches after compaction
+    # ------------------------------------------------------------------
+    if tool_name == "Read":
+        file_path = tool_input.get("file_path")
+        if file_path:
+            try:
+                CompactionAdvisor().record_refetch(file_path)
+            except Exception as e:
+                log.debug("Compliance refetch check failed: %s", e)
 
     # ------------------------------------------------------------------
     # Write-invalidation: stale reads of any edited file

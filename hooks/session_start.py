@@ -67,6 +67,7 @@ def main():
 
     if source == "compact":
         parts.append(_build_post_compaction_summary())
+        _log_compaction_event(session_id)
         log.info("Injecting post-compaction summary")
 
     print(json.dumps({"additionalContext": "\n\n".join(parts)}))
@@ -121,6 +122,29 @@ def _build_post_compaction_summary() -> str:
     ]
 
     return "\n".join(lines)
+
+
+def _log_compaction_event(session_id: str) -> None:
+    """
+    Log the compaction to the DB and write compliance_monitor.json so that
+    PostToolUse can track re-fetches in the new session as a compliance signal.
+    """
+    try:
+        advisor = CompactionAdvisor()
+        hints = advisor.read_hints()
+        if hints is None:
+            log.warning("No eviction hints found for compaction event logging")
+            return
+        event_id = advisor.log_compaction_event(hints, session_id)
+        advisor.write_compliance_monitor(event_id, session_id, hints)
+        log.info(
+            "Logged compaction event id=%d: %d evictable hints, %d preserved hints",
+            event_id,
+            len(hints.get("safe_to_evict", [])),
+            len(hints.get("critical_to_preserve", [])),
+        )
+    except Exception as e:
+        log.error("Failed to log compaction event: %s", e)
 
 
 if __name__ == "__main__":

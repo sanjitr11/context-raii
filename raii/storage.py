@@ -66,6 +66,20 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
     FOREIGN KEY(dependency_task_id) REFERENCES tasks(id)
 );
 
+CREATE TABLE IF NOT EXISTS compaction_events (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id             TEXT NOT NULL,
+    compacted_at           TEXT NOT NULL,
+    hints_evictable_count  INTEGER DEFAULT 0,
+    hints_preserved_count  INTEGER DEFAULT 0,
+    hints_evictable_tokens INTEGER DEFAULT 0,
+    confirmed_evicted      INTEGER DEFAULT 0,
+    false_negatives        INTEGER DEFAULT 0,
+    compliance_rate        REAL DEFAULT 0.0,
+    compliance_block_found INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_compaction_session ON compaction_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_chunks_status ON context_chunks(status);
 CREATE INDEX IF NOT EXISTS idx_edges_task ON reference_edges(source_task_id);
