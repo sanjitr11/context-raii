@@ -40,7 +40,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 PENDING_TAG_PATH = DB_DIR / "pending_tag.json"
-NUDGE_SENTINEL_PATH = DB_DIR / "nudge_sent.{session_id}"
 
 WORK_TOOLS = frozenset({"Edit", "Write", "Bash", "MultiEdit"})
 
@@ -89,27 +88,16 @@ def main():
     PENDING_TAG_PATH.write_text(json.dumps(pending))
 
     # ------------------------------------------------------------------
-    # Enforce task hygiene: block work tools if no active task is set.
-    # After blocking once per session, switch to non-blocking reminders
-    # so a single missed task doesn't halt all progress.
+    # Enforce task hygiene: always block work tools if no active task.
     # ------------------------------------------------------------------
     output = {}
     if tool_name in WORK_TOOLS and active_task is None:
-        sentinel = DB_DIR / f"nudge_sent.{session_id}"
-        if not sentinel.exists():
-            # First offence: block the tool call and demand a task
-            sentinel.touch()
-            output["decision"] = "block"
-            output["reason"] = (
-                "No active task. You must call TodoWrite to create and start a task "
-                "before making changes. Create the task now, then retry."
-            )
-            log.info("Blocked %s — no active task (session %s)", tool_name, session_id)
-        else:
-            # Subsequent calls: remind without blocking
-            output["additionalContext"] = (
-                "Reminder: no active task is set. Use TodoWrite to track this work."
-            )
+        output["decision"] = "block"
+        output["reason"] = (
+            "No active task. You must call TodoWrite to create and start a task "
+            "before making changes. Create the task now, then retry."
+        )
+        log.info("Blocked %s — no active task (session %s)", tool_name, session_id)
 
     print(json.dumps(output))
     sys.exit(0)
