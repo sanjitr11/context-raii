@@ -2,9 +2,12 @@
 Determines which context chunks are safe to evict.
 
 Eviction rules:
-1. All tasks in chunk.task_ids have status = completed
-2. No in-progress or pending task has a ReferenceEdge pointing to this chunk
-3. OR the chunk has been superseded (a newer call to the same tool with the same args exists)
+1. Superseded: a newer identical tool call exists AND all owning tasks complete/abandoned
+2. Active ReferenceEdge from a live task → keep
+3. Owning task not yet complete/abandoned → keep
+4. Active task declared dependsOn an owning task → keep
+5. (Auto-applied before evaluation) In-progress task with 50+ chunks since creation
+   → auto-abandoned; treated as complete for rules 3 and 4
 """
 
 from __future__ import annotations
@@ -53,8 +56,14 @@ class EvictionEngine:
     def run(self, update_db: bool = True) -> EvictionReport:
         """
         Evaluate all non-evicted chunks and produce an EvictionReport.
-        If update_db=True, marks newly evictable chunks in the DB.
+        If update_db=True, marks newly evictable chunks in the DB and
+        auto-abandons stale in_progress tasks before evaluating evictions.
         """
+        if update_db:
+            abandoned = self._registry.abandon_stale_tasks(threshold=50)
+            for tid in abandoned:
+                log.info("Auto-abandoned stale task before eviction run: %s", tid)
+
         report = EvictionReport()
         chunks = self._tagger.list_all()
         active_referenced = self._graph.chunks_referenced_by_active_tasks()

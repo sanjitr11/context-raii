@@ -46,7 +46,7 @@ def main():
     task_counts = {r["status"]: r["n"] for r in tasks}
     total_tasks = sum(task_counts.values())
     print(f"\nTASKS ({total_tasks} total)")
-    for status in ("pending", "in_progress", "completed"):
+    for status in ("pending", "in_progress", "completed", "abandoned"):
         n = task_counts.get(status, 0)
         bar = "█" * min(n, 30)
         print(f"  {status:<12} {n:>4}  {bar}")

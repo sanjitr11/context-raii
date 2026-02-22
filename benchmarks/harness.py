@@ -119,6 +119,14 @@ class ScenarioHarness:
             {"type": "text", "text": output},
         )
 
+    def pre_compact(self):
+        """Fire the PreCompact hook to run the eviction engine and generate hints."""
+        return self._hook("pre_compact.py", {
+            "session_id": self.session_id,
+            "trigger": "auto",
+            "context_window_tokens": 50000,
+        })
+
     # ------------------------------------------------------------------
     # DB access
     # ------------------------------------------------------------------
@@ -159,6 +167,7 @@ class ScenarioHarness:
 
         total_tasks = len(tasks)
         completed_tasks = sum(1 for t in tasks if t["status"] == "completed")
+        abandoned_tasks = sum(1 for t in tasks if t["status"] == "abandoned")
 
         refetches = self._count_refetches(chunks)
 
@@ -171,6 +180,7 @@ class ScenarioHarness:
             "token_eviction_rate": evictable_tokens / total_tokens if total_tokens else 0,
             "total_tasks": total_tasks,
             "completed_tasks": completed_tasks,
+            "abandoned_tasks": abandoned_tasks,
             "task_completion_rate": completed_tasks / total_tasks if total_tasks else 0,
             "refetch_count": refetches,
             "refetch_rate": refetches / max(evictable, 1),

@@ -6,11 +6,14 @@ Tasks map to Claude Code's TodoWrite / TaskCreate / TaskUpdate tool calls.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, Set, List, Dict
 
 from .storage import get_conn, serialize, deserialize
+
+log = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -21,18 +24,19 @@ def _now() -> str:
 class Task:
     id: str
     subject: str
-    status: str                          # pending | in_progress | completed
+    status: str                          # pending | in_progress | completed | abandoned
     parent_id: Optional[str] = None
     context_chunk_ids: Set[str] = field(default_factory=set)
     created_at: str = field(default_factory=_now)
     completed_at: Optional[str] = None
+    abandoned_at: Optional[str] = None
     metadata: Dict = field(default_factory=dict)
 
     def is_active(self) -> bool:
         return self.status in ("pending", "in_progress")
 
     def is_complete(self) -> bool:
-        return self.status == "completed"
+        return self.status in ("completed", "abandoned")
 
 
 class TaskRegistry:
@@ -50,13 +54,14 @@ class TaskRegistry:
         with get_conn() as conn:
             conn.execute(
                 """
-                INSERT INTO tasks (id, subject, status, parent_id, created_at, completed_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (id, subject, status, parent_id, created_at, completed_at, abandoned_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     subject      = excluded.subject,
                     status       = excluded.status,
                     parent_id    = excluded.parent_id,
                     completed_at = excluded.completed_at,
+                    abandoned_at = excluded.abandoned_at,
                     metadata     = excluded.metadata
                 """,
                 (
@@ -66,6 +71,7 @@ class TaskRegistry:
                     task.parent_id,
                     task.created_at,
                     task.completed_at,
+                    task.abandoned_at,
                     serialize(task.metadata),
                 ),
             )
@@ -107,6 +113,44 @@ class TaskRegistry:
                 """,
                 (dependent_task_id, dependency_task_id),
             )
+
+    def abandon_stale_tasks(self, threshold: int = 50) -> List[str]:
+        """
+        Auto-abandon in_progress tasks that have been active too long.
+
+        "Too long" = at least `threshold` context_chunks exist with
+        created_at > task.created_at (a proxy for tool-call count since
+        the task was started).
+
+        Abandoned tasks are marked status='abandoned' (not 'completed') to
+        preserve the analytics distinction. They are treated as complete by
+        is_complete() so their chunks become evictable.
+
+        Returns list of task IDs that were abandoned.
+        """
+        now = _now()
+        abandoned = []
+        with get_conn() as conn:
+            in_progress = conn.execute(
+                "SELECT id, created_at FROM tasks WHERE status = 'in_progress'"
+            ).fetchall()
+            for row in in_progress:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM context_chunks WHERE created_at > ?",
+                    (row["created_at"],),
+                ).fetchone()[0]
+                if count >= threshold:
+                    conn.execute(
+                        "UPDATE tasks SET status='abandoned', abandoned_at=? WHERE id=?",
+                        (now, row["id"]),
+                    )
+                    abandoned.append(row["id"])
+                    log.info(
+                        "Auto-abandoned stale task %s (%d chunks since creation)",
+                        row["id"],
+                        count,
+                    )
+        return abandoned
 
     def has_active_dependents(self, task_id: str) -> bool:
         """Return True if any task that declared dependsOn this task is still active."""
@@ -192,5 +236,6 @@ class TaskRegistry:
             context_chunk_ids={r["chunk_id"] for r in chunk_rows},
             created_at=row["created_at"],
             completed_at=row["completed_at"],
+            abandoned_at=row["abandoned_at"] if "abandoned_at" in row.keys() else None,
             metadata=deserialize(row["metadata"]),
         )

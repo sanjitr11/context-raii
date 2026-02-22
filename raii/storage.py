@@ -94,6 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_deps_dependency ON task_dependencies(dependency_t
 # SQLite has no ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so we try/except.
 _MIGRATIONS = [
     "ALTER TABLE context_chunks ADD COLUMN status_changed_at TEXT",
+    "ALTER TABLE tasks ADD COLUMN abandoned_at TEXT",
 ]
 
 
