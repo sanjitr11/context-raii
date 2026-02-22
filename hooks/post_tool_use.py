@@ -65,6 +65,21 @@ def main():
     registry = TaskRegistry()
     tagger = ContextTagger(registry)
 
+    # TaskCreate and TaskUpdate(in_progress) fire before the task is active,
+    # so pre_tool_use captures active_task_id=None. Override here using the
+    # task ID from the input so these metadata chunks aren't left as orphans.
+    if active_task_id is None:
+        if tool_name == "TaskCreate":
+            active_task_id = tool_input.get("id") or tool_input.get("task_id")
+        elif tool_name == "TaskUpdate":
+            new_status = tool_input.get("status")
+            if new_status == "in_progress":
+                active_task_id = (
+                    tool_input.get("taskId")
+                    or tool_input.get("id")
+                    or tool_input.get("task_id")
+                )
+
     # ------------------------------------------------------------------
     # Tag the result as a ContextChunk
     # ------------------------------------------------------------------
