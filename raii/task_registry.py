@@ -96,6 +96,32 @@ class TaskRegistry:
                 (task_id, chunk_id, _now()),
             )
 
+    def add_dependency(self, dependent_task_id: str, dependency_task_id: str) -> None:
+        """Record that dependent_task builds on dependency_task.
+        Chunks owned by dependency_task stay pinned until dependent_task completes."""
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO task_dependencies (dependent_task_id, dependency_task_id)
+                VALUES (?, ?)
+                """,
+                (dependent_task_id, dependency_task_id),
+            )
+
+    def has_active_dependents(self, task_id: str) -> bool:
+        """Return True if any task that declared dependsOn this task is still active."""
+        with get_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) FROM task_dependencies td
+                JOIN tasks t ON td.dependent_task_id = t.id
+                WHERE td.dependency_task_id = ?
+                  AND t.status IN ('pending', 'in_progress')
+                """,
+                (task_id,),
+            ).fetchone()
+            return row[0] > 0
+
     # ------------------------------------------------------------------
     # Read operations
     # ------------------------------------------------------------------

@@ -109,6 +109,9 @@ def _handle_task_create(registry: TaskRegistry, tool_input: dict):
     parent_id = tool_input.get("parent_id")
     if task_id:
         registry.create(id=task_id, subject=subject, parent_id=parent_id)
+        for dep_id in tool_input.get("dependsOn", []):
+            registry.add_dependency(task_id, dep_id)
+            log.info("TaskCreate dependency: %s → %s", task_id, dep_id)
         log.info("TaskCreate: id=%s subject=%r", task_id, subject)
 
 
@@ -146,6 +149,9 @@ def _handle_todo_write(registry: TaskRegistry, tool_input: dict):
         if existing is None:
             registry.create(id=task_id, subject=subject)
         registry.update_status(task_id, status)
+        for dep_id in todo.get("dependsOn", []):
+            registry.add_dependency(task_id, dep_id)
+            log.info("TodoWrite dependency: %s → %s", task_id, dep_id)
     log.info("TodoWrite: processed %d todos", len(todos))
 
 

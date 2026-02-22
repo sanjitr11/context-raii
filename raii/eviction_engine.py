@@ -113,8 +113,19 @@ class EvictionEngine:
         if not self._all_owning_tasks_complete(chunk):
             return "owning_task_not_complete"
 
+        # Rule 4: an active task declared a dependency on one of the owning tasks,
+        # meaning it semantically depends on this chunk's context.
+        if self._any_owning_task_has_active_dependents(chunk):
+            return "active_dependent_task"
+
         # All rules pass → evictable
         return None
+
+    def _any_owning_task_has_active_dependents(self, chunk: ContextChunk) -> bool:
+        for task_id in chunk.task_ids:
+            if self._registry.has_active_dependents(task_id):
+                return True
+        return False
 
     def _all_owning_tasks_complete(self, chunk: ContextChunk) -> bool:
         if not chunk.task_ids:

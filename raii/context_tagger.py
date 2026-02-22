@@ -103,9 +103,31 @@ class ContextTagger:
     def mark_evictable(self, chunk_id: str) -> None:
         with get_conn() as conn:
             conn.execute(
-                "UPDATE context_chunks SET status = 'evictable' WHERE id = ?",
-                (chunk_id,),
+                "UPDATE context_chunks SET status = 'evictable', status_changed_at = ? WHERE id = ?",
+                (_now(), chunk_id),
             )
+
+    def invalidate_reads_for_path(self, file_path: str) -> int:
+        """
+        Immediately mark all fresh Read chunks for file_path as evictable.
+        Called when an Edit/Write modifies the file — prior reads are now stale.
+        Returns the count of chunks invalidated.
+        """
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT id, tool_input FROM context_chunks WHERE tool_name = 'Read' AND status = 'fresh'"
+            ).fetchall()
+            now = _now()
+            invalidated = 0
+            for row in rows:
+                tool_input = deserialize(row["tool_input"])
+                if tool_input.get("file_path") == file_path:
+                    conn.execute(
+                        "UPDATE context_chunks SET status = 'evictable', status_changed_at = ? WHERE id = ?",
+                        (now, row["id"]),
+                    )
+                    invalidated += 1
+            return invalidated
 
     def mark_integrated(self, chunk_id: str) -> None:
         with get_conn() as conn:

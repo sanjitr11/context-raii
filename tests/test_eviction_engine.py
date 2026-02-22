@@ -251,6 +251,115 @@ class TestUpdateDb:
         assert chunk.status == "fresh"
 
 
+class TestWriteInvalidation:
+    def test_edit_immediately_evicts_prior_read(self):
+        """A Read chunk for a file becomes evictable the moment that file is edited."""
+        from raii.task_registry import TaskRegistry
+        from raii.context_tagger import ContextTagger
+
+        reg = TaskRegistry()
+        reg.create("t1", "Task 1")
+        reg.update_status("t1", "in_progress")
+
+        tagger = ContextTagger(reg)
+        # Simulate a Read chunk for auth.py — task still active so normally NOT evictable
+        _chunk("c_read", tool_name="Read", task_id="t1",
+               tool_input={"file_path": "/src/auth.py"})
+
+        # Now the file is edited — prior read is stale
+        n = tagger.invalidate_reads_for_path("/src/auth.py")
+        assert n == 1
+
+        chunk = tagger.get("c_read")
+        assert chunk.status == "evictable"
+
+    def test_edit_does_not_evict_read_of_different_file(self):
+        from raii.task_registry import TaskRegistry
+        from raii.context_tagger import ContextTagger
+
+        reg = TaskRegistry()
+        reg.create("t1", "Task 1")
+        reg.update_status("t1", "in_progress")
+        tagger = ContextTagger(reg)
+
+        _chunk("c_read", tool_name="Read", task_id="t1",
+               tool_input={"file_path": "/src/models.py"})
+
+        n = tagger.invalidate_reads_for_path("/src/auth.py")
+        assert n == 0
+
+        chunk = tagger.get("c_read")
+        assert chunk.status == "fresh"
+
+    def test_already_evictable_reads_not_double_counted(self):
+        from raii.task_registry import TaskRegistry
+        from raii.context_tagger import ContextTagger
+
+        reg = TaskRegistry()
+        reg.create("t1", "Task 1")
+        reg.update_status("t1", "completed")
+        tagger = ContextTagger(reg)
+
+        _chunk("c_read", tool_name="Read", task_id="t1",
+               tool_input={"file_path": "/src/auth.py"})
+        tagger.mark_evictable("c_read")  # already evicted by task completion
+
+        # Edit fires — should not fail, just returns 0 (already evictable)
+        n = tagger.invalidate_reads_for_path("/src/auth.py")
+        assert n == 0
+
+
+class TestDeclaredDependencies:
+    def test_dependency_pins_chunks_until_dependent_completes(self):
+        """Task A completes, but Task B depends on it → A's chunks stay pinned."""
+        from raii.task_registry import TaskRegistry
+
+        reg = TaskRegistry()
+        reg.create("task-a", "Design auth module")
+        reg.update_status("task-a", "completed")
+        reg.create("task-b", "Implement auth module")
+        reg.update_status("task-b", "in_progress")
+        reg.add_dependency("task-b", "task-a")  # B depends on A
+
+        _chunk("c1", task_id="task-a")
+
+        report = _engine(registry=reg).run(update_db=False)
+        evictable_ids = {c.id for c in report.evictable_chunks}
+        assert "c1" not in evictable_ids
+        assert report.reasons.get("c1") == "active_dependent_task"
+
+    def test_dependency_released_when_dependent_completes(self):
+        """Once Task B also completes, Task A's chunks become evictable."""
+        from raii.task_registry import TaskRegistry
+
+        reg = TaskRegistry()
+        reg.create("task-a", "Design auth module")
+        reg.update_status("task-a", "completed")
+        reg.create("task-b", "Implement auth module")
+        reg.update_status("task-b", "completed")
+        reg.add_dependency("task-b", "task-a")
+
+        _chunk("c1", task_id="task-a")
+
+        report = _engine(registry=reg).run(update_db=False)
+        evictable_ids = {c.id for c in report.evictable_chunks}
+        assert "c1" in evictable_ids
+
+    def test_no_dependency_evicts_normally(self):
+        """Without a dependency declaration, completed task chunks evict as usual."""
+        from raii.task_registry import TaskRegistry
+
+        reg = TaskRegistry()
+        reg.create("task-a", "Design")
+        reg.update_status("task-a", "completed")
+
+        _chunk("c1", task_id="task-a")
+
+        report = _engine(registry=reg).run(update_db=False)
+        evictable_ids = {c.id for c in report.evictable_chunks}
+        assert "c1" in evictable_ids
+
+
 class TestTokenCounting:
     def test_report_token_counts(self):
         reg = _task("t1", "completed")

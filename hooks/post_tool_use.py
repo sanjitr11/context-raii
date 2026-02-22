@@ -86,6 +86,15 @@ def main():
         )
 
     # ------------------------------------------------------------------
+    # Write-invalidation: stale reads of any edited file
+    # ------------------------------------------------------------------
+    if tool_name in ("Edit", "Write", "MultiEdit"):
+        for path in _extract_edited_paths(tool_input):
+            n = tagger.invalidate_reads_for_path(path)
+            if n > 0:
+                log.info("Write-invalidated %d Read chunk(s) for %s", n, path)
+
+    # ------------------------------------------------------------------
     # On task completion: run eviction engine
     # ------------------------------------------------------------------
     if tool_name == "TaskUpdate":
@@ -148,6 +157,18 @@ def _extract_text(response) -> str:
         return response["text"]
 
     return json.dumps(response)
+
+
+def _extract_edited_paths(tool_input: dict) -> list:
+    """Extract all file paths touched by an Edit, Write, or MultiEdit call."""
+    paths = []
+    if "file_path" in tool_input:
+        paths.append(tool_input["file_path"])
+    # MultiEdit passes a list of edits, each with their own file_path
+    for edit in tool_input.get("edits", []):
+        if "file_path" in edit:
+            paths.append(edit["file_path"])
+    return paths
 
 
 def _read_pending_task_id(tool_use_id: str) -> str | None:

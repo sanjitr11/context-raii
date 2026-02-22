@@ -58,13 +58,29 @@ CREATE TABLE IF NOT EXISTS task_chunks (
     FOREIGN KEY(chunk_id) REFERENCES context_chunks(id)
 );
 
+CREATE TABLE IF NOT EXISTS task_dependencies (
+    dependent_task_id  TEXT NOT NULL,
+    dependency_task_id TEXT NOT NULL,
+    PRIMARY KEY (dependent_task_id, dependency_task_id),
+    FOREIGN KEY(dependent_task_id)  REFERENCES tasks(id),
+    FOREIGN KEY(dependency_task_id) REFERENCES tasks(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_chunks_status ON context_chunks(status);
 CREATE INDEX IF NOT EXISTS idx_edges_task ON reference_edges(source_task_id);
 CREATE INDEX IF NOT EXISTS idx_edges_chunk ON reference_edges(target_chunk_id);
 CREATE INDEX IF NOT EXISTS idx_task_chunks_task ON task_chunks(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_chunks_chunk ON task_chunks(chunk_id);
+CREATE INDEX IF NOT EXISTS idx_deps_dependent ON task_dependencies(dependent_task_id);
+CREATE INDEX IF NOT EXISTS idx_deps_dependency ON task_dependencies(dependency_task_id);
 """
+
+# Migrations for columns added after initial schema creation.
+# SQLite has no ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so we try/except.
+_MIGRATIONS = [
+    "ALTER TABLE context_chunks ADD COLUMN status_changed_at TEXT",
+]
 
 
 def ensure_db() -> None:
@@ -72,6 +88,11 @@ def ensure_db() -> None:
     DB_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         conn.executescript(SCHEMA)
+        for migration in _MIGRATIONS:
+            try:
+                conn.execute(migration)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.commit()
 
 
